@@ -13,6 +13,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     var feed: JSON?
+    var displayMode = 0
+    var updateDisplayTimer: Timer?
+    var fetchFeedTimer: Timer?
     
     func addConfigurationMenuItem() {
         let separator = NSMenuItem(title: "Settings", action: #selector(showSettings), keyEquivalent: "")
@@ -20,6 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showSettings(_ sender: NSMenuItem) {
+        updateDisplayTimer?.invalidate()
         let storyboard = NSStoryboard(name: NSStoryboard.Name("Main"), bundle: nil)
         guard let vc = storyboard.instantiateController(withIdentifier: "ViewController") as? ViewController else { return }
         let popoverView = NSPopover()
@@ -42,6 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ aNotification: Notification) {
         // Insert code here to tear down your application
     }
+    
     @objc func fetchFeed() {
         let defaults = UserDefaults.standard
         guard let apiKey = defaults.string(forKey: "apiKey") else { return }
@@ -72,12 +77,62 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let newFeed = JSON(parseJSON: data)
             DispatchQueue.main.async {
                 self.feed = newFeed
+                self.updateDisplay()
             }
         }
     }
     
     @objc func loadSettings() {
+        displayMode = UserDefaults.standard.integer(forKey: "statusBarOption")
+        fetchFeedTimer = Timer.scheduledTimer(timeInterval: 60 * 5, target: self, selector: #selector(fetchFeed), userInfo: nil, repeats: true)
+        fetchFeedTimer?.tolerance = 60
+        configureUpdateDisplayTimer()
         fetchFeed()
+    }
+    
+    func updateDisplay() {
+        guard let feed = feed else { return }
+        var text = "Error"
+        
+        switch displayMode {
+        case 0:
+            if let summary = feed["currently"]["summary"].string {
+                text = summary
+            }
+        case 1:
+            if let temperature = feed["currently"]["temperature"].int {
+                text = "\(temperature)"
+            }
+        case 2:
+            if let rain = feed["currently"]["precipProbability"].double {
+                text = "Rain: \(rain * 100)%"
+            }
+        case 3:
+            if let cloud = feed["currently"]["cloudCover"].double {
+                text = "Cloud: \(cloud * 100)%"
+            }
+        default:
+            break
+        }
+        statusItem.button?.title = text
+    }
+    
+    @objc func changeDisplayMode() {
+        displayMode += 1
+        if displayMode > 3 {
+            displayMode = 0
+        }
+        updateDisplay()
+    }
+    
+    func configureUpdateDisplayTimer() {
+        guard let statusBarMode = UserDefaults.standard.string(forKey: "statusBarOption") else { return }
+        if statusBarMode == "-1" {
+            displayMode = 0
+            updateDisplayTimer = Timer.scheduledTimer(timeInterval: 2, target: self, selector: #selector(changeDisplayMode), userInfo: nil, repeats: true)
+        } else {
+            updateDisplayTimer?.invalidate()
+        }
     }
 }
 
